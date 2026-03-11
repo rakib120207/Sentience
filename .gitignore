@@ -1,0 +1,36 @@
+.env
+firebase-key.json
+firebase-key*.json
+*-key.json
+service-account*.json
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Cloud Build ───────────────────────────────────────────────────
+.gcloudignore
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
