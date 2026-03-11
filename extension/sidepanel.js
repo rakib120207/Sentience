@@ -517,9 +517,38 @@ async function captureAndAnalyze(){
     if(!d.emotion_detected) return;
     camReading.textContent = d.visual_context || d.emotion_detected;
     if(d.emotion_detected !== emotion && EMOS[d.emotion_detected]){
+      const prev = emotion;
       setEmotion(d.emotion_detected);
       emoSub.textContent = 'Detected by camera';
       toast(`Camera: ${EMOS[d.emotion_detected].e} ${d.emotion_detected}`, 'ok', 2000);
+
+      // ── PROACTIVE INTERVENTION ────────────────────────────────────
+      // If camera detects a high-vulnerability emotion and we have page
+      // context (i.e., user is on a checkout/shopping page), proactively
+      // surface the intervention without waiting for the user to speak.
+      const highRisk = EMOS[d.emotion_detected]?.hi;
+      const onCheckout = currentCtx && (currentCtx.type === 'checkout' || currentCtx.type === 'shopping');
+      if(highRisk && onCheckout && vuln >= 4){
+        // Only fire once per context to avoid spamming
+        if(!window._proactiveTriggered){
+          window._proactiveTriggered = true;
+          setTimeout(async ()=>{
+            // Fetch fresh vuln for new emotion
+            await fetchVuln(d.emotion_detected);
+            const emoLabel = EMOS[d.emotion_detected].l;
+            const emoIcon  = EMOS[d.emotion_detected].e;
+            showModal(
+              `${emoIcon} Camera detected you're feeling <strong>${emoLabel}</strong> while on a ${currentCtx.type} page.<br><br>`+
+              `Your vulnerability score just updated to <strong>${vuln.toFixed(1)}/10</strong>. `+
+              `Sentience suggests a <strong>24-hour cool-off</strong> before continuing.`,
+              vuln
+            );
+            toast(`Proactive: ${emoLabel} detected on checkout — intervention triggered`, 'warn', 4000);
+          }, 1200);
+        }
+      }
+      // Reset proactive trigger when emotion improves
+      if(!EMOS[d.emotion_detected]?.hi) window._proactiveTriggered = false;
     }
   }catch{}
 }
@@ -626,13 +655,16 @@ document.addEventListener('keydown', async e=>{
     }).catch(()=>{});
     await new Promise(r=>setTimeout(r,150));
   }
-  toast('Data seeded — open Dashboard to view','ok',3000);
+  // Immediately refresh the vulnerability score so it shows "High Risk" on screen
+  await fetchVuln('stressed');
+  toast('✓ Data seeded — vulnerability score updated!','ok',3000);
+
   setTimeout(()=>{
     showModal(
       `You're <strong>😰 Stressed</strong>.<br><br>While stressed, you've made 5 purchases totalling $844 — with an average regret score of <strong>8.2/10</strong>. Is this purchase the exception, or the rule?`,
       8.4
     );
-  },500);
+  },600);
 });
 
 // ── QUICK LOG ─────────────────────────────────────────────────────
