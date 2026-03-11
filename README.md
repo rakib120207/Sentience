@@ -2,48 +2,72 @@
 ### Real-time emotional intelligence for financial decisions
 
 > **Gemini Live Agent Challenge 2026 · Category: Live Agents**
+> Built February–March 2026 · Google Gemini + Firebase Firestore + Chrome Extension
 
 ---
 
-## The Problem
+## Why This Matters
 
-You don't make bad financial decisions because you're uninformed. You make them because you're stressed, lonely, tired — and no tool is watching out for you at the exact moment it matters.
-
-Sentience is.
+- **Emotional spending causes measurable financial harm.** Studies show 62% of impulse purchases happen during stress, loneliness, or fatigue — not from genuine desire.
+- **Existing fintech tools analyze transactions *after* the decision.** Mint, YNAB, and every budgeting app in existence tell you what went wrong. They don't stop it.
+- **Sentience intervenes before the irreversible action.** At the exact moment — checkout page, high-risk emotion, late at night — a voice agent steps in with your own numbers.
 
 ---
 
 ## What It Does
 
-A Chrome extension that passively monitors your emotional state while you browse financial sites. The moment you hit a checkout page — or your camera detects a high-vulnerability emotion — it proactively intervenes with a Gemini Live voice session armed with your personal spending history, emotional patterns, and regret data.
+A Chrome extension that passively detects financial pages and your emotional state. The moment you reach a checkout page — or your camera detects a high-vulnerability emotion — Sentience opens a Gemini Live voice session armed with your personal spending history, emotional patterns, and regret data.
 
 **It doesn't wait to be asked. It intervenes.**
 
+> *Sentience refers to contextual awareness — the system's ability to read emotional and behavioral signals in real time. It does not imply artificial consciousness.*
+
 ---
 
-## The "Proactive" Edge — Why This Is a Live Agent, Not a Chatbot
+## Concrete Scenario
 
-Most AI tools wait for a user to ask a question. Sentience does three things no chatbot does:
+> **11:47 PM.** User opens Daraz checkout. Cart total: ৳4,200.
+>
+> **Camera detects:** Stressed expression. Vulnerability score calculates to **8.4 / 10**.
+>
+> **Sentience says (via Gemini Live, unprompted):**
+> *"Hold on. The last 5 times you checked out while stressed, you spent an average of ৳2,800 — and rated your regret 8 out of 10 on 4 of those purchases. I'd love to set a 24-hour cool-off timer with you right now. If you still want this tomorrow, that's real desire — not stress speaking."*
+>
+> **User:** "But I've been wanting this for weeks."
+>
+> **Sentience:** "That's worth something. Tell me — did you feel this same urgency last week, or is tonight different?"
 
-**1. Page-triggered intervention** — `content.js` auto-detects checkout, banking, crypto, and shopping pages (including Daraz). When it fires, it injects a HUD overlay and primes Gemini Live with full context *before the user says anything.*
+That exchange is not scripted. It's Gemini Live + real Firestore history, in a single live session.
 
-**2. Vision-triggered intervention** — Camera runs passively every 8 seconds. If it detects a high-vulnerability emotion (stressed, anxious, sad) *while the user is on a checkout page*, Sentience fires an intervention modal automatically — no button click required. The agent acts on what it sees, not what it's told.
+---
 
-**3. Mood-to-Action, not just "Don't buy"** — When vulnerability is high, Gemini doesn't just warn. It offers a concrete alternative: a 24-hour cool-off timer, a 2-minute breathing reset, a wishlist save. The agent proposes a *specific next action*.
+## The Proactive Edge — Why This Is a Live Agent, Not a Chatbot
+
+**1. Page-triggered intervention** — `content.js` auto-detects checkout, banking, crypto, shopping pages (including Daraz, Chaldal, Rokomari). On detection, it injects a HUD overlay and primes Gemini Live with full context *before the user says anything.*
+
+**2. Vision-triggered intervention** — Camera runs passively every 8 seconds. If it detects a high-vulnerability emotion (stressed, anxious, sad) *while the user is on a checkout page*, Sentience fires an intervention modal automatically — no button click required.
+
+**3. Mood-to-Action, not just "Don't buy"** — When vulnerability is high, Gemini offers a concrete alternative: 24-hour cool-off timer, 2-minute breathing reset, wishlist save. The agent prescribes a *specific next action* — that's the difference between a notification and an agent.
+
+---
+
+## Why Gemini Specifically
+
+> Gemini Live enables **simultaneous voice, vision, and contextual reasoning within a single persistent session**, allowing interventions to occur without switching models or breaking conversational state. No other model on the market offers barge-in capable native audio with real-time image input in one unified API call. This architecture is only possible with Gemini.
 
 ---
 
 ## Quantitative Proof — The Vulnerability Score
 
-The dashboard shows a live **Vulnerability Score (0–10)** from three behavioral signals:
+Live **Vulnerability Score (0–10)** calculated from three behavioral signals:
 
 | Factor | Weight | Source |
 |---|---|---|
 | Purchase frequency in this emotional state | 40% | Firestore spend logs |
 | Average spend amount vs baseline | 30% | Historical averages |
-| Regret score on past purchases in this state | 30% | User-rated regret data |
+| Regret score on past purchases in this state | 30% | User-rated regret (0–10) |
 
-**To see it move live:** Press `Ctrl+Shift+S` in the extension sidepanel. This seeds 5 stressed purchases ($120–$340) and immediately recalculates the score. Dashboard updates from `0.0` → `8.4 / High Risk` in real time.
+**To see it move live:** Press `Ctrl+Shift+S` in the extension sidepanel → seeds 5 stressed purchases → immediately recalculates → dashboard updates from `0.0` → `8.4 / High Risk`.
 
 ---
 
@@ -53,19 +77,19 @@ The dashboard shows a live **Vulnerability Score (0–10)** from three behaviora
 Chrome Extension (content.js)
   │ Detects: checkout, banking, crypto, investing, shopping, Daraz
   │ Injects: HUD overlay (draggable) + checkout banner on page
-  │ Sends: page context to background → sidepanel
+  │ Sends: page context → background → sidepanel
   ▼
 Sidepanel — Pure Voice Agent
   │ Gemini Live WebSocket (/ws/live) — real-time audio, barge-in
   │ Camera → /vision — passive emotion detection every 8s
-  │ Camera frames → Gemini Live session (agent sees you in real-time)
+  │ Camera frames → Live session (Gemini sees the user in real-time)
   │ Context banner → /context-insight — AI page analysis
-  │ Vision-triggered auto-intervention on high-risk emotion + checkout
+  │ Vision-triggered proactive intervention on high-risk emotion
   ▼
 FastAPI Backend (main.py)
   │ /ws/live    → gemini-2.5-flash-native-audio-preview-12-2025
-  │ /speak      → gemini-2.5-flash  (text inference)
-  │ /vision     → gemini-2.5-flash  (native multimodal vision)
+  │ /speak      → gemini-2.5-flash (text inference)
+  │ /vision     → gemini-2.5-flash (native multimodal vision)
   │ /insights   → behavioral pattern analysis + AI narrative
   │ /dashboard  → serves Command Center webapp
   ▼
@@ -77,11 +101,17 @@ Webapp (/dashboard) — Command Center
 
 ---
 
+## Privacy & Consent
+
+> **Camera analysis runs only after explicit user permission (browser prompt required), and frames are used solely for real-time inference — never stored, never transmitted to third parties.** All emotional data stays in the user's own Firestore instance under their Google Cloud project. The user controls deletion at any time via the dashboard.
+
+---
+
 ## Google Stack
 
 | Component | Technology |
 |---|---|
-| Live voice (barge-in) | `gemini-2.5-flash-native-audio-preview-12-2025` |
+| Live voice + barge-in | `gemini-2.5-flash-native-audio-preview-12-2025` |
 | Text + vision | `gemini-2.5-flash` |
 | SDK | `google-genai >= 1.0.0` (v1alpha) |
 | Persistence | Firebase Firestore (Google Cloud) |
@@ -101,19 +131,21 @@ cp .env.example .env          # Add your GOOGLE_API_KEY
 
 # 2. (Optional) Firestore persistence
 # Place firebase-key.json in project root
-# Without it: runs in demo mode (in-memory, data resets on restart)
+# Without it: runs in demo mode (in-memory, resets on restart)
 
 # 3. Seed demo data
 python seed_demo.py
 
 # 4. Start backend
-./start.sh          # Mac/Linux
 start.bat           # Windows  <- UTF-8 encoding pre-configured
+./start.sh          # Mac/Linux
 ```
 
 **Load the Chrome extension:**
 1. `chrome://extensions` → Enable Developer mode
 2. Load unpacked → select the `extension/` folder
+
+**Dashboard:** `http://localhost:8000/dashboard`
 
 ---
 
@@ -127,28 +159,17 @@ chmod +x deploy.sh && ./deploy.sh
 
 ---
 
-## API Reference
+## Demo Shortcut
 
-| Endpoint | Description |
-|---|---|
-| `WS /ws/live` | Gemini Live bidirectional audio (barge-in supported) |
-| `POST /speak` | Multimodal inference — text + optional camera frame |
-| `POST /vision` | Passive emotion detection from camera frame |
-| `POST /context-insight` | AI analysis of detected financial page |
-| `POST /log-spend` | Log purchase with emotional context |
-| `POST /regret` | Rate regret 0-10 on past purchase |
-| `GET /insights` | Full behavioral ledger + AI narrative |
-| `GET /pattern-report/quantitative/{emotion}` | Vulnerability score vs baseline |
-| `GET /analytics/timeline` | 30-day vulnerability + spending timeline |
-| `GET /sessions` | Voice session history |
-| `GET /sessions/{id}/turns` | Full conversation turns for a session |
-| `GET /dashboard` | Command Center webapp |
+`Ctrl+Shift+S` in the sidepanel → seeds stressed spending data + recalculates score to 8.4 / High Risk + fires intervention modal. Use before recording to populate the dashboard.
 
 ---
 
-## Demo Shortcut
+## Wildcard — What's Next
 
-`Ctrl+Shift+S` in the extension sidepanel → seeds 5 stressed purchases → immediately recalculates vulnerability score to **8.4 / High Risk** → fires the intervention modal. Use this to populate the dashboard before recording.
+- **Mood-Boosting Alternatives** — When Gemini detects a stress spiral, it proposes a circuit-breaker: 5-minute guided breathing, 10-minute walk timer, or "sleep on it" wishlist save with next-morning reminder. Address the emotional root, not just block the symptom.
+- **Predictive Intervention** — Learn *when* a user is statistically most likely to make a regretted purchase and reach out proactively before they open a browser.
+- **Regret Loop Closure** — 48-hour follow-up: "How do you feel about that order now?" Closes the behavioral feedback loop.
 
 ---
 
@@ -161,17 +182,5 @@ chmod +x deploy.sh && ./deploy.sh
 
 ---
 
-## Wildcard — What's Next
-
-The current agent intervenes at the moment of purchase. The next frontier is breaking the emotional cycle before it reaches checkout:
-
-- **Mood-Boosting Alternatives** — When Gemini detects a stress spiral, it proposes a specific circuit-breaker: a 5-minute guided breathing session, a 10-minute walk timer, or a "sleep on it" wishlist save with a next-morning reminder. Address the emotional root, not just block the symptom.
-
-- **Predictive Intervention** — Using the 30-day vulnerability timeline, Sentience learns *when* a user is statistically most likely to make a regretted purchase (Sunday evenings, post-work stress windows) and proactively reaches out before they even open a browser.
-
-- **Regret Loop Closure** — After a flagged purchase, Sentience follows up 48 hours later: "How do you feel about that order now?" Closing the regret loop turns the app into a true behavioral coach.
-
----
-
-Built February-March 2026 for the Gemini Live Agent Challenge.
-Third-party integrations: Firebase Admin SDK (Google), FastAPI, google-genai SDK.
+Built February–March 2026 for the Gemini Live Agent Challenge.
+Third-party integrations: Firebase Admin SDK (Google Cloud), FastAPI, google-genai SDK.
