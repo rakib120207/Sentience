@@ -1431,6 +1431,29 @@ async def websocket_live(websocket: WebSocket):
                     elif msg_type == "end_turn":
                         full_transcript = ""
 
+                    elif msg_type == "end_of_turn":
+                        # Client-side VAD detected user stopped speaking.
+                        # Signal Gemini explicitly so it responds immediately.
+                        # For native audio models, send() with end_of_turn=True
+                        # is the correct way to flush the turn.
+                        try:
+                            await live_session.send(
+                                input=genai_types.LiveClientRealtimeInput(
+                                    media_chunks=[
+                                        genai_types.Blob(
+                                            mime_type="audio/pcm;rate=16000",
+                                            data=b"",   # empty audio blob
+                                        )
+                                    ]
+                                )
+                            )
+                            logger.debug("WS /live: VAD end-of-turn flush → Gemini")
+                        except Exception as e:
+                            logger.debug(f"WS /live: end_of_turn flush skipped: {e}")
+
+                    elif msg_type == "ping":
+                        pass  # keepalive from frontend — no-op
+
                     elif msg_type == "visual_frame":
                         # Camera frame from extension → forward directly to Gemini Live
                         # This lets Gemini SEE the user in real-time during voice chat

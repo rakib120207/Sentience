@@ -492,7 +492,13 @@ function injectMiniHUD(contextType) {
         hud.style.opacity = '0';
         setTimeout(() => hud.remove(), 200);
       } else {
-        chrome.runtime.sendMessage({ type: 'open_panel' });
+        // Guard against "Extension context invalidated" when extension reloads
+        // while the page is still open — this is normal Chrome extension behaviour.
+        try {
+          chrome.runtime.sendMessage({ type: 'open_panel' });
+        } catch (err) {
+          // Context gone — silently ignore. User can reload the page.
+        }
       }
     }
   });
@@ -587,11 +593,15 @@ function runDetection() {
   }
   injectMiniHUD(ctxType);
 
-  // Send to background
-  chrome.runtime.sendMessage(
-    { type: 'financial_context_detected', data: currentContext },
-    (response) => { if (chrome.runtime.lastError) {} }
-  );
+  // Send to background — guard against invalidated context on extension reload
+  try {
+    chrome.runtime.sendMessage(
+      { type: 'financial_context_detected', data: currentContext },
+      () => { void chrome.runtime.lastError; }  // suppress unhandled error warning
+    );
+  } catch (err) {
+    // Extension was reloaded mid-session — context is gone, ignore silently
+  }
 }
 
 // Run on load

@@ -109,16 +109,24 @@ body{display:flex;flex-direction:column}
 /* ── BARS / AUDIO WAVE ── */
 .wave-bars{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:10px;opacity:0;transition:opacity .3s}
 .wave-bars.show{opacity:1}
-.wave-bar{width:3px;background:var(--g);border-radius:2px;animation:waveAnim 0.8s ease-in-out infinite}
-.wave-bar:nth-child(1){animation-delay:0s;height:6px}
-.wave-bar:nth-child(2){animation-delay:.1s;height:14px}
-.wave-bar:nth-child(3){animation-delay:.2s;height:18px}
-.wave-bar:nth-child(4){animation-delay:.3s;height:10px}
-.wave-bar:nth-child(5){animation-delay:.1s;height:14px}
-.wave-bar:nth-child(6){animation-delay:.2s;height:8px}
-.wave-bar:nth-child(7){animation-delay:0s;height:6px}
-@keyframes waveAnim{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.8)}}
-.wave-bars.speaking .wave-bar{background:rgba(77,159,255,.9)}
+.wave-bar{width:3px;background:var(--g);border-radius:2px;transition:transform 0.05s linear;transform-origin:bottom}
+.wave-bar:nth-child(1){height:6px}
+.wave-bar:nth-child(2){height:10px}
+.wave-bar:nth-child(3){height:14px}
+.wave-bar:nth-child(4){height:18px}
+.wave-bar:nth-child(5){height:14px}
+.wave-bar:nth-child(6){height:10px}
+.wave-bar:nth-child(7){height:6px}
+/* AI speaking: CSS animation (no JS needed) */
+.wave-bars.speaking .wave-bar{animation:waveAnim 0.5s ease-in-out infinite;background:rgba(77,159,255,.9)}
+.wave-bars.speaking .wave-bar:nth-child(1){animation-delay:0s}
+.wave-bars.speaking .wave-bar:nth-child(2){animation-delay:.07s}
+.wave-bars.speaking .wave-bar:nth-child(3){animation-delay:.14s}
+.wave-bars.speaking .wave-bar:nth-child(4){animation-delay:.21s}
+.wave-bars.speaking .wave-bar:nth-child(5){animation-delay:.14s}
+.wave-bars.speaking .wave-bar:nth-child(6){animation-delay:.07s}
+.wave-bars.speaking .wave-bar:nth-child(7){animation-delay:0s}
+@keyframes waveAnim{0%,100%{transform:scaleY(1)}50%{transform:scaleY(2.4)}}
 
 /* ── EMOTION + VULN ROW ── */
 .emo-row{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--b1);flex-shrink:0}
@@ -278,7 +286,7 @@ body{display:flex;flex-direction:column}
       <div class="wave-bar"></div>
     </div>
     <div class="orb-status" id="orbStatus">Tap to talk with Sentience</div>
-    <div class="orb-hint" id="orbHint">Gemini Live · Barge-in enabled</div>
+    <div class="orb-hint" id="orbHint">Tap once · Talk freely · Interrupt anytime</div>
   </div>
 
   <!-- LIVE TRANSCRIPT -->

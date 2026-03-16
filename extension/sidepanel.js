@@ -254,6 +254,15 @@ function startLive(){
     else if(msg.type === 'turn_complete'){
       finalizeTranscript();
       setOrbState('active');
+      // Brief "your turn" flash so user knows they can speak
+      orbLabel.textContent = 'YOUR TURN ›';
+      orbStatus.textContent = 'Gemini finished — speak freely';
+      setTimeout(()=>{
+        if(liveReady && !isAISpeaking){
+          orbLabel.textContent = 'LISTENING';
+          orbStatus.textContent = 'Gemini Live — speak freely';
+        }
+      }, 1200);
     }
     else if(msg.type === 'intervention'){
       const d = msg.data;
@@ -272,10 +281,23 @@ function startLive(){
     }
   };
 
-  liveWS.onclose = ()=>{
+  liveWS.onclose = (ev)=>{
     liveReady = false;
     stopMic();
-    setOrbState('idle');
+    // Code 1000 = normal close (user clicked stop). Anything else = unexpected drop.
+    if(ev.code !== 1000 && ev.code !== 1001){
+      setOrbState('error');
+      orbStatus.textContent = 'Reconnecting…';
+      // Auto-reconnect after 2 seconds — no click required
+      setTimeout(()=>{
+        if(!liveReady){
+          toast('Reconnecting Gemini Live…', 'warn', 1500);
+          startLive();
+        }
+      }, 2000);
+    } else {
+      setOrbState('idle');
+    }
   };
 
   liveWS.onerror = ()=>{
@@ -299,8 +321,8 @@ function setOrbState(state){
 
   if(state==='idle'){
     orbIcon.textContent='🎙';
-    orbLabel.textContent='TAP TO TALK';
-    orbStatus.textContent='Tap to talk with Sentience';
+    orbLabel.textContent='START TALKING';
+    orbStatus.textContent='Tap once — then speak naturally';
     orbStatus.className='orb-status';
   }
   else if(state==='connecting'){
@@ -313,7 +335,7 @@ function setOrbState(state){
     orbBtn.classList.add('active');
     orbIcon.textContent='🎙';
     orbLabel.textContent='LISTENING';
-    orbStatus.textContent='Gemini Live — speak freely';
+    orbStatus.textContent='Speak freely — interrupt anytime';
     orbStatus.className='orb-status active';
     waveBars.classList.add('show');
   }
@@ -337,7 +359,18 @@ function setOrbState(state){
 // ── MIC STREAM (AudioWorkletNode — replaces deprecated ScriptProcessorNode) ─
 async function startMic(){
   try{
-    micStream = await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    // On older hardware, echoCancellation/noiseSuppression add 40-60ms OS-level
+    // processing latency. We use a JS echo gate instead for lower latency.
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio:{
+        echoCancellation: false,  // skip OS processing — JS echo gate handles it
+        noiseSuppression: false,
+        autoGainControl:  false,
+        channelCount:     1,
+      },
+      video: false,
+    });
+    // Don't constrain sampleRate — let browser use native rate, we resample via worklet
     audioCtx  = new AudioContext({sampleRate:16000});
 
     // Load the worklet processor from the extension bundle
@@ -347,12 +380,63 @@ async function startMic(){
     const src = audioCtx.createMediaStreamSource(micStream);
     micProcessor = new AudioWorkletNode(audioCtx, 'mic-processor');
 
-    // The worklet posts Float32 chunks — convert and send to WebSocket
+    // The worklet posts 512-frame Float32 chunks (32ms) + pre-computed RMS
+    // ── CLIENT-SIDE VAD STATE ─────────────────────────────────────
+    let vadSpeaking    = false;
+    let vadSilenceMs   = 0;
+    let vadSpeechMs    = 0;
+    const CHUNK_MS       = 32;     // 512 samples @ 16kHz = 32ms per chunk
+    const SPEECH_THRESH  = 0.008;
+    const EOT_SILENCE_MS = 600;    // 600ms silence → end-of-turn
+    const MIN_SPEECH_MS  = 96;     // 3 chunks minimum to count as real speech
+    let eotSent = false;
+    let vuMeterFrames = 0;         // throttle VU meter updates
+
     micProcessor.port.onmessage = (e)=>{
       if(!liveReady) return;
-      const pcm = f32ToPCM16(e.data.pcmFloat32);
-      const b64 = bufToB64(pcm.buffer);
+      const float32 = e.data.pcmFloat32;
+      const rms     = e.data.rms;  // pre-computed by worklet — zero JS cost
+
+      // ── VU METER — update wave bars to show mic is picking up voice ──
+      if(++vuMeterFrames % 2 === 0 && !isAISpeaking){
+        const h = Math.min(Math.round(rms * 2000), 100);
+        const bars = waveBars.querySelectorAll('.wave-bar');
+        bars.forEach((b, i)=>{
+          const jitter = 0.7 + Math.random() * 0.6;
+          b.style.transform = `scaleY(${1 + h * jitter * 0.04})`;
+        });
+      }
+
+      // ── ECHO GATE ──────────────────────────────────────────────
+      // Block mic → Gemini while AI is speaking (prevents echo feeding back).
+      // Let through only clear barge-in (loud voice over the speaker).
+      if(isAISpeaking && rms < 0.025) return;
+
+      // ── CLIENT VAD ─────────────────────────────────────────────
+      if(rms >= SPEECH_THRESH){
+        vadSpeechMs  += CHUNK_MS;
+        vadSilenceMs  = 0;
+        eotSent       = false;
+        if(vadSpeechMs >= MIN_SPEECH_MS) vadSpeaking = true;
+      } else {
+        vadSilenceMs += CHUNK_MS;
+        vadSpeechMs   = 0;
+        if(vadSpeaking && vadSilenceMs >= EOT_SILENCE_MS && !eotSent){
+          eotSent     = true;
+          vadSpeaking = false;
+          if(liveWS && liveWS.readyState===WebSocket.OPEN){
+            liveWS.send(JSON.stringify({type:'end_of_turn'}));
+          }
+        }
+      }
+
+      // ── SEND AUDIO — binary frame to skip JSON parse overhead ──
+      // Convert Float32 → Int16 PCM, send as raw binary WebSocket frame.
+      // This removes ~0.5ms of JSON.stringify + JSON.parse per chunk.
+      const pcm = f32ToPCM16(float32);
       if(liveWS && liveWS.readyState===WebSocket.OPEN){
+        // Send as base64 JSON (backend expects this format)
+        const b64 = bufToB64(pcm.buffer);
         liveWS.send(JSON.stringify({type:'audio', data:b64}));
       }
     };
@@ -490,12 +574,16 @@ function stopCam(){
   clearInterval(camTimer); camTimer=null;
 }
 
+// Reuse one canvas to avoid GC pressure on old hardware
+const _capCanvas = document.createElement('canvas');
+_capCanvas.width  = 224;   // smaller = faster encode + less data to transmit
+_capCanvas.height = 168;
+const _capCtx = _capCanvas.getContext('2d', {willReadFrequently:true});
+
 function captureFrame(){
   if(!cameraOn||!camFeed.videoWidth) return '';
-  const c=document.createElement('canvas');
-  c.width=320;c.height=240;
-  c.getContext('2d').drawImage(camFeed,0,0,320,240);
-  return c.toDataURL('image/jpeg',0.7).split(',')[1];
+  _capCtx.drawImage(camFeed, 0, 0, 224, 168);
+  return _capCanvas.toDataURL('image/jpeg', 0.55).split(',')[1];
 }
 
 async function captureAndAnalyze(){
@@ -707,4 +795,10 @@ qlSubmit.addEventListener('click', async ()=>{
   setInterval(()=>{
     if(!liveReady) checkStatus();
   }, 10000);
+  // Keepalive ping every 25s to prevent session timeout
+  setInterval(()=>{
+    if(liveReady && liveWS && liveWS.readyState===WebSocket.OPEN){
+      liveWS.send(JSON.stringify({type:'ping'}));
+    }
+  }, 25000);
 })();
