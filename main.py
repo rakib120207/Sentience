@@ -1576,14 +1576,46 @@ async def websocket_live(websocket: WebSocket):
                             )
                         full_transcript = ""
 
-            send_task    = asyncio.create_task(send_loop())
-            receive_task = asyncio.create_task(receive_loop())
-            done, pending = await asyncio.wait(
+            # send_loop runs forever until client disconnects (WebSocketDisconnect).
+            # receive_loop iterates live_session.receive() which CAN exhaust
+            # (GoAway, server-side idle timeout) without the client disconnecting.
+            # We wrap receive in a resilient restart loop so the session stays
+            # alive as long as the client WebSocket is open.
+
+            keep_alive = asyncio.Event()  # set when client disconnects
+
+            async def resilient_receive():
+                """Restart receive_loop if the iterator exits unexpectedly."""
+                while not keep_alive.is_set():
+                    try:
+                        await receive_loop()
+                        # receive_loop returned normally = iterator exhausted
+                        # (server GoAway / idle). Stay alive for next user turn.
+                        logger.info("WS /live: receive iterator exhausted — staying alive")
+                        await asyncio.sleep(0.1)
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        logger.warning(f"WS /live: receive_loop error ({e}) — retrying")
+                        await asyncio.sleep(0.5)
+
+            async def guarded_send():
+                """Send loop — sets keep_alive on disconnect so receive stops."""
+                try:
+                    await send_loop()
+                finally:
+                    keep_alive.set()
+
+            send_task    = asyncio.create_task(guarded_send())
+            receive_task = asyncio.create_task(resilient_receive())
+
+            await asyncio.wait(
                 [send_task, receive_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for task in pending:
-                task.cancel()
+            send_task.cancel()
+            receive_task.cancel()
+            await asyncio.gather(send_task, receive_task, return_exceptions=True)
             logger.info(f"WS /live: session {session_id[:8]} ended")
 
     except Exception as e:

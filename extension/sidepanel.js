@@ -254,13 +254,25 @@ function startLive(){
     else if(msg.type === 'turn_complete'){
       finalizeTranscript();
       setOrbState('active');
-      // Brief "your turn" flash so user knows they can speak
+
+      // ── Reset VAD state so NEXT speech segment fires end-of-turn correctly ──
+      // Without this, eotSent stays true and Gemini never gets the signal
+      // that the user finished their second sentence.
+      if(typeof vadSpeakingRef !== 'undefined') {
+        vadSpeakingRef.speaking = false;
+        vadSpeakingRef.eotSent  = false;
+        vadSpeakingRef.silence  = 0;
+        vadSpeakingRef.speech   = 0;
+      }
+      window._bargeInFired = false;  // reset barge-in guard too
+
+      // Brief "your turn" flash
       orbLabel.textContent = 'YOUR TURN ›';
       orbStatus.textContent = 'Gemini finished — speak freely';
       setTimeout(()=>{
         if(liveReady && !isAISpeaking){
           orbLabel.textContent = 'LISTENING';
-          orbStatus.textContent = 'Gemini Live — speak freely';
+          orbStatus.textContent = 'Speak freely — interrupt anytime';
         }
       }, 1200);
     }
@@ -382,14 +394,13 @@ async function startMic(){
 
     // The worklet posts 512-frame Float32 chunks (32ms) + pre-computed RMS
     // ── CLIENT-SIDE VAD STATE ─────────────────────────────────────
-    let vadSpeaking    = false;
-    let vadSilenceMs   = 0;
-    let vadSpeechMs    = 0;
+    // Use a ref object so turn_complete handler can reset VAD state
+    const vadSpeakingRef = { speaking:false, eotSent:false, silence:0, speech:0 };
+    window.vadSpeakingRef = vadSpeakingRef;  // expose for turn_complete reset
     const CHUNK_MS       = 32;     // 512 samples @ 16kHz = 32ms per chunk
     const SPEECH_THRESH  = 0.008;
     const EOT_SILENCE_MS = 600;    // 600ms silence → end-of-turn
     const MIN_SPEECH_MS  = 96;     // 3 chunks minimum to count as real speech
-    let eotSent = false;
     let vuMeterFrames = 0;         // throttle VU meter updates
 
     micProcessor.port.onmessage = (e)=>{
@@ -398,7 +409,7 @@ async function startMic(){
       const rms     = e.data.rms;  // pre-computed by worklet — zero JS cost
 
       // ── VU METER — update wave bars to show mic is picking up voice ──
-      if(++vuMeterFrames % 2 === 0 && !isAISpeaking){
+      if(++vuMeterFrames % 2 === 0 && !isAISpeaking && waveBars.classList.contains('show')){
         const h = Math.min(Math.round(rms * 2000), 100);
         const bars = waveBars.querySelectorAll('.wave-bar');
         bars.forEach((b, i)=>{
@@ -407,23 +418,44 @@ async function startMic(){
         });
       }
 
-      // ── ECHO GATE ──────────────────────────────────────────────
-      // Block mic → Gemini while AI is speaking (prevents echo feeding back).
-      // Let through only clear barge-in (loud voice over the speaker).
-      if(isAISpeaking && rms < 0.025) return;
+      // ── ECHO GATE + NATURAL BARGE-IN ──────────────────────────
+      // While AI is speaking, block quiet audio (echo) but let through
+      // loud voice (user speaking over AI = natural barge-in).
+      if(isAISpeaking){
+        if(rms < 0.025) return;  // echo / background noise — drop it
+
+        // User is clearly speaking over the AI — this IS the natural barge-in.
+        // Stop local playback immediately and signal Gemini to stop too.
+        if(!window._bargeInFired){
+          window._bargeInFired = true;
+          _stopPlayback();                                      // kill speaker audio instantly
+          liveWS.send(JSON.stringify({type:'interrupt'}));      // tell Gemini to stop
+          setOrbState('active');
+          // Brief visual flash so user knows barge-in fired
+          orbStatus.textContent = 'Interrupted — go ahead';
+          orbStatus.className   = 'orb-status active';
+          setTimeout(()=>{
+            window._bargeInFired = false;                       // reset after 1.5s
+            if(liveReady && !isAISpeaking){
+              orbStatus.textContent = 'Speak freely — interrupt anytime';
+            }
+          }, 1500);
+        }
+        // Continue — audio chunk goes through to Gemini
+      }
 
       // ── CLIENT VAD ─────────────────────────────────────────────
       if(rms >= SPEECH_THRESH){
-        vadSpeechMs  += CHUNK_MS;
-        vadSilenceMs  = 0;
-        eotSent       = false;
-        if(vadSpeechMs >= MIN_SPEECH_MS) vadSpeaking = true;
+        vadSpeakingRef.speech  += CHUNK_MS;
+        vadSpeakingRef.silence  = 0;
+        vadSpeakingRef.eotSent  = false;
+        if(vadSpeakingRef.speech >= MIN_SPEECH_MS) vadSpeakingRef.speaking = true;
       } else {
-        vadSilenceMs += CHUNK_MS;
-        vadSpeechMs   = 0;
-        if(vadSpeaking && vadSilenceMs >= EOT_SILENCE_MS && !eotSent){
-          eotSent     = true;
-          vadSpeaking = false;
+        vadSpeakingRef.silence += CHUNK_MS;
+        vadSpeakingRef.speech   = 0;
+        if(vadSpeakingRef.speaking && vadSpeakingRef.silence >= EOT_SILENCE_MS && !vadSpeakingRef.eotSent){
+          vadSpeakingRef.eotSent  = true;
+          vadSpeakingRef.speaking = false;
           if(liveWS && liveWS.readyState===WebSocket.OPEN){
             liveWS.send(JSON.stringify({type:'end_of_turn'}));
           }
